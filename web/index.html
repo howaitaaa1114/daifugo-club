@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111822">
+  <meta name="description" content="2〜8人で遊べるオンライン大富豪。部屋を作り、友だちを招待しよう。">
+  <title>大富豪クラブ</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/web/app.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">♠</span> 大富豪クラブ</div>
+      <button class="help ghost" type="button" id="help">遊び方 <span aria-hidden="true">↗</span></button>
+    </div>
+  </header>
+  <main id="app" class="shell"></main>
+  <footer class="shell site-footer"><span aria-hidden="true">♠ <i>♥</i> <i>♦</i> ♣</span><span>大富豪クラブ</span></footer>
+  <dialog id="guide"><form method="dialog"><button class="ghost close" aria-label="閉じる">×</button></form><div id="guide-content"></div></dialog>
+</body>
+</html>

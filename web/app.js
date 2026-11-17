@@ -1,0 +1,202 @@
+import { guideView, homeView, lobbyView, matchView, resultView } from "./views.js";
+
+const app = document.querySelector("#app");
+const guide = document.querySelector("#guide");
+document.querySelector("#guide-content").innerHTML = guideView;
+document.querySelector("#help").addEventListener("click", () => guide.showModal());
+
+const storageKey = "daifugo-session";
+const invitedCode = new URLSearchParams(location.search).get("room") ?? "";
+let session;
+try {
+  session = JSON.parse(sessionStorage.getItem(storageKey));
+} catch {
+  session = null;
+}
+let state = null;
+let syncing = false;
+let clockOffset = 0;
+const ui = { mode: invitedCode ? "join" : "create", name: "", code: invitedCode, busy: false, error: "", notice: "", selected: new Set() };
+
+function render() {
+  const previous = document.activeElement;
+  const focus = previous && app.contains(previous)
+    ? ["value", "action", "rule"].find(key => previous.dataset[key] !== undefined)
+    : null;
+  app.innerHTML = !state ? homeView(ui) : !state.round ? lobbyView(state, ui) : state.round.done ? resultView(state, ui) : matchView(state, ui);
+  showClock();
+  if (focus) {
+    const replacement = [...app.querySelectorAll(`[data-${focus}]`)].find(node => node.dataset[focus] === previous.dataset[focus]);
+    replacement?.focus({ preventScroll: true });
+  }
+}
+
+function accept(next) {
+  if (next?.serverNow) clockOffset = next.serverNow - Date.now();
+  if (state?.revision === next?.revision && state?.code === next?.code) return false;
+  state = next;
+  ui.selected.clear();
+  return true;
+}
+
+function showClock() {
+  const clock = app.querySelector("[data-clock]");
+  if (!clock) return;
+  const { deadline, pausedAt } = state.round;
+  const seconds = Math.max(0, Math.ceil((deadline - (pausedAt ?? Date.now() + clockOffset)) / 1000));
+  const label = `残り ${seconds} 秒`;
+  if (clock.textContent !== label) clock.textContent = label;
+  clock.classList.toggle("urgent", seconds <= 5);
+}
+
+async function request(payload) {
+  const headers = new Headers();
+  if (session?.token) headers.set("Authorization", `Bearer ${session.token}`);
+  if (payload) headers.set("Content-Type", "application/json");
+  const path = payload ? "/api/rooms" : `/api/rooms?code=${encodeURIComponent(session.code)}`;
+  const response = await fetch(path, {
+    method: payload ? "POST" : "GET",
+    headers,
+    body: payload ? JSON.stringify(payload) : undefined,
+    signal: AbortSignal.timeout(10000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(new Error(data.error ?? "サーバーに接続できませんでした。"), { status: response.status });
+  }
+  return data;
+}
+
+function saveSession(value) {
+  session = value;
+  if (session) sessionStorage.setItem(storageKey, JSON.stringify(session));
+  else sessionStorage.removeItem(storageKey);
+}
+
+async function send(payload) {
+  if (ui.busy) return;
+  ui.busy = true;
+  ui.error = "";
+  ui.notice = "";
+  render();
+  try {
+    const data = await request(payload);
+    if (data.token) saveSession({ token: data.token, code: data.state.code });
+    if (payload.type === "leave") {
+      saveSession(null);
+      history.replaceState(null, "", location.pathname);
+      ui.mode = "create";
+      ui.code = "";
+    }
+    accept(data.state);
+  } catch (error) {
+    ui.error = error.status ? error.message : "通信できませんでした。もう一度お試しください。";
+  } finally {
+    ui.busy = false;
+    render();
+  }
+}
+
+function command(type, body = {}) {
+  return send({ type, code: state.code, revision: state.revision, ...body });
+}
+
+async function sync() {
+  if (!session || ui.busy || syncing) return;
+  syncing = true;
+  const current = session;
+  try {
+    const data = await request();
+    if (current !== session || ui.busy) return;
+    if (state && data.state.revision < state.revision) return;
+    if (accept(data.state)) render();
+  } catch (error) {
+    if (current !== session) return;
+    if (error.status === 403 || error.status === 404) {
+      saveSession(null);
+      accept(null);
+      ui.error = error.message;
+      render();
+    } else if (!state) {
+      ui.error = "部屋に再接続しています…";
+      render();
+    }
+  } finally {
+    syncing = false;
+  }
+}
+
+async function invite() {
+  const url = new URL(location.pathname, location.origin);
+  url.searchParams.set("room", state.code);
+  try {
+    await navigator.clipboard.writeText(url.href);
+    ui.notice = "招待リンクをコピーしました。";
+  } catch {
+    ui.notice = `参加する人に部屋コード ${state.code} を伝えてください。`;
+  }
+  ui.error = "";
+  render();
+}
+
+app.addEventListener("input", event => {
+  if (event.target.name === "name") ui.name = event.target.value;
+  if (event.target.name === "code") ui.code = event.target.value;
+});
+
+app.addEventListener("change", event => {
+  const rule = event.target.dataset.rule;
+  if (rule && state) {
+    if (rule === "nineMode") {
+      const mode = event.target.value;
+      command("settings", { settings: { ...state.settings, "9": mode === "pickup", nineReverse: mode === "reverse" } });
+      return;
+    }
+    const value = rule === "jokerCount" ? Number(event.target.value) : event.target.checked;
+    command("settings", { settings: { ...state.settings, [rule]: value } });
+  }
+});
+
+app.addEventListener("submit", event => {
+  if (event.target.id !== "entry-form") return;
+  event.preventDefault();
+  const form = new FormData(event.target);
+  ui.name = String(form.get("name") ?? "");
+  ui.code = String(form.get("code") ?? ui.code);
+  send({ type: ui.mode, name: ui.name, code: ui.code });
+});
+
+app.addEventListener("click", event => {
+  const target = event.target.closest("button");
+  if (!target || target.disabled || ui.busy) return;
+  const { value, action } = target.dataset;
+  if (value !== undefined) {
+    if (ui.selected.has(value)) ui.selected.delete(value);
+    else if (!state.round.pending || ui.selected.size < state.round.pending.count) ui.selected.add(value);
+    ui.error = "";
+    render();
+  } else if (action === "create-mode" || action === "join-mode") {
+    ui.mode = action === "create-mode" ? "create" : "join";
+    ui.error = "";
+    render();
+  } else if (action === "invite") {
+    invite();
+  } else if (action === "solo") {
+    send({ type: "solo" });
+  } else if (action === "play" || action === "resolve") {
+    command(action, { cards: [...ui.selected] });
+  } else if (action === "discard") {
+    if (window.confirm("この対戦を破棄して、全員をロビーに戻しますか？")) command(action);
+  } else if (action === "leave" && state.solo && state.round && !state.round.done) {
+    if (window.confirm("この対戦を終了してトップ画面に戻りますか？")) command(action);
+  } else if (action) {
+    command(action);
+  }
+});
+
+if (invitedCode && session?.code !== invitedCode) saveSession(null);
+render();
+sync();
+setInterval(() => { if (!document.hidden) sync(); }, 1000);
+setInterval(showClock, 250);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) sync(); });
