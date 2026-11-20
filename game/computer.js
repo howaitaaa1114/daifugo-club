@@ -18,25 +18,102 @@ function handCost(hand, round, settings) {
     return cost;
 }
 
-function resolveEffect(round, settings) {
+function publicInformation(round, settings) {
+    const own = round.hands[round.turn];
+    const visible = [...own, ...round.discard, ...(round.table?.cards ?? [])];
+    const jokers = Math.max(settings.jokerCount ?? 1, visible.some(card => card.id === "JK2") ? 2 : 1);
+    const unseen = new Map(bomberRanks.map(rank => [rank, rank === "JK" ? jokers : 4]));
+    const seen = new Set();
+    for (const card of visible) {
+        if (seen.has(card.id)) continue;
+        seen.add(card.id);
+        unseen.set(card.rank, Math.max(0, (unseen.get(card.rank) ?? 0) - 1));
+    }
+    for (const rank of round.bombedRanks ?? []) unseen.set(rank, 0);
+    return {
+        unseen,
+        total: [...unseen.values()].reduce((sum, count) => sum + count, 0),
+        opponents: round.order.filter(id => id !== round.turn && round.hands[id].length > 0)
+            .map(id => round.hands[id].length),
+    };
+}
+
+function bomberScore(round, settings, information, selected) {
+    const hand = round.hands[round.turn];
+    const remaining = hand.filter(card => !selected.includes(card.rank));
+    // The bomber actor ranks first among simultaneous finishers.
+    if (!remaining.length) return 10000;
+    let score = handCost(hand, round, settings) - handCost(remaining, round, settings);
+    const removed = selected.reduce((sum, rank) => sum + information.unseen.get(rank), 0);
+    let noneFinish = 1;
+    let expectedFinishers = 0;
+    // Estimate uniform deals from unseen cards, without replacement within a hand.
+    for (const count of information.opponents) {
+        let probability = count <= removed && count <= information.total ? 1 : 0;
+        for (let i = 0; i < count && probability > 0; i++) {
+            probability *= (removed - i) / (information.total - i);
+        }
+        noneFinish *= 1 - probability;
+        expectedFinishers += probability;
+    }
+    score -= expectedFinishers * 24;
+    if (round.previousKing === round.turn && !round.results.length) {
+        score -= (1 - noneFinish) * 100;
+    }
+    const reversed = round.revolution !== round.back;
+    const ceiling = Math.max(...remaining.map(card => strength(card.rank, reversed)));
+    for (const rank of selected) {
+        const unseen = information.unseen.get(rank);
+        if (!unseen) continue;
+        const power = strength(rank, reversed);
+        if (!hand.some(card => card.rank === rank) && power > ceiling) {
+            score += (power - ceiling + 2) * 1.7 * unseen / (rank === "JK" ? 1 : 4);
+        }
+        if (rank === "Q" && settings.Q) {
+            const protectedCards = remaining.reduce((sum, card) => {
+                const power = strength(card.rank, reversed);
+                return sum + Math.max(0, power - 9);
+            }, 0);
+            score += protectedCards * unseen * 0.4;
+        }
+    }
+    return score;
+}
+
+function chooseBomber(round, settings, information) {
+    const ownRanks = [...new Set(round.hands[round.turn].map(card => card.rank))];
+    if (ownRanks.length <= round.pending.count) {
+        const extra = bomberRanks.filter(rank => !ownRanks.includes(rank))
+            .sort((a, b) => information.unseen.get(a) - information.unseen.get(b));
+        return { type: "resolve", cards: [...ownRanks, ...extra].slice(0, round.pending.count) };
+    }
+    // Keep at most eight promising sets at each step, bounding work even for six Qs.
+    let choices = [{ ranks: [], score: 0 }];
+    const scores = new Map();
+    for (let i = 0; i < round.pending.count; i++) {
+        const expanded = new Map();
+        for (const choice of choices) {
+            for (const rank of bomberRanks) {
+                if (choice.ranks.includes(rank)) continue;
+                const ranks = [...choice.ranks, rank].sort();
+                const key = ranks.join(",");
+                if (!scores.has(key)) scores.set(key, bomberScore(round, settings, information, ranks));
+                expanded.set(key, { ranks, score: scores.get(key) });
+            }
+        }
+        choices = [...expanded.values()].sort((a, b) => b.score - a.score).slice(0, 8);
+    }
+    return { type: "resolve", cards: choices[0].ranks };
+}
+
+function resolveEffect(round, settings, information) {
     const hand = round.hands[round.turn];
     const effect = round.pending;
     const reversed = round.revolution !== round.back;
     let remaining = [...hand];
     const chosen = [];
     if (effect.kind === "Q") {
-        const ranks = [...bomberRanks];
-        for (let i = 0; i < effect.count; i++) {
-            ranks.sort((a, b) => {
-                const cost = rank => handCost(remaining.filter(card => card.rank !== rank), round, settings)
-                    - (remaining.some(card => card.rank === rank) ? 0 : strength(rank, reversed) * 0.03);
-                return cost(a) - cost(b);
-            });
-            const rank = ranks.shift();
-            chosen.push(rank);
-            remaining = remaining.filter(card => card.rank !== rank);
-        }
-        return { type: "resolve", cards: chosen };
+        return chooseBomber(round, settings, information ?? publicInformation(round, settings));
     }
     if (effect.kind === "9") {
         const choices = [...effect.choices];
@@ -89,7 +166,7 @@ function candidateMoves(round) {
     return moves;
 }
 
-function scoreMove(round, settings, move, opponents) {
+function scoreMove(round, settings, move, opponents, information) {
     const actor = round.turn;
     // Use public hand sizes, never an opponent's card identities.
     const simulated = {
@@ -103,13 +180,21 @@ function scoreMove(round, settings, move, opponents) {
         results: round.results.map(group => [...group]),
     };
     applyMove(simulated, settings, actor, "", move);
+    let bomberValue = 0;
     if (simulated.pending) {
-        applyMove(simulated, settings, actor, "", resolveEffect(simulated, settings));
+        const effect = resolveEffect(simulated, settings, information);
+        if (simulated.pending.kind === "Q") {
+            const remaining = simulated.hands[actor].filter(card => !effect.cards.includes(card.rank));
+            const ownReduction = handCost(simulated.hands[actor], simulated, settings)
+                - handCost(remaining, simulated, settings);
+            bomberValue = bomberScore(simulated, settings, information, effect.cards) - ownReduction;
+        }
+        applyMove(simulated, settings, actor, "", effect);
     }
     if (simulated.fallen === actor) return -10000;
     if (simulated.results.some(group => group.includes(actor))) return 10000;
     let score = handCost(round.hands[actor], round, settings)
-        - handCost(simulated.hands[actor], simulated, settings);
+        - handCost(simulated.hands[actor], simulated, settings) + bomberValue;
     const urgent = opponents.some(count => count <= 2);
     if (move.type === "pass") {
         const ownerCount = round.hands[round.table.owner].length;
@@ -131,10 +216,11 @@ export function computerMove(round, settings = defaultSettings) {
     const opponents = round.order.filter(id => id !== round.turn)
         .map(id => round.hands[id].length).filter(count => count > 0);
     const moves = candidateMoves(round);
+    const information = publicInformation(round, settings);
     let best = moves[0];
     let bestScore = -Infinity;
     for (const move of moves) {
-        const score = scoreMove(round, settings, move, opponents);
+        const score = scoreMove(round, settings, move, opponents, information);
         if (score > bestScore) {
             best = move;
             bestScore = score;

@@ -165,6 +165,7 @@ function resolve(round, actor, values) {
     ];
     if (effect.kind === "Q") {
         requireRule(new Set(values).size === values.length && values.every(rank => bomberRanks.includes(rank)), "除外する数字やジョーカーを選び直してください。");
+        round.bombedRanks = [...new Set([...(round.bombedRanks ?? []), ...values])];
         const seat = round.order.indexOf(actor);
         // Bomber ranking always runs clockwise, independently of 9-reverse.
         candidates = [...round.order.slice(seat), ...round.order.slice(0, seat)]

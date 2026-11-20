@@ -193,6 +193,7 @@ export function roomView(room, self, revision) {
                 tribute: round.turn === self ? round.pending.tribute ?? [] : []
             },
             fallen: round.fallen ?? null,
+            bombedRanks: round.bombedRanks ?? [],
             revolution: round.revolution,
             back: round.back,
             reverse: round.reverse === true,

@@ -3,6 +3,7 @@ import test from "node:test";
 import { computerMove } from "../game/computer.js";
 import { applyMove, startRound } from "../game/round.js";
 import { defaultSettings } from "../game/rules.js";
+import { shuffledDeck } from "../game/cards.js";
 
 const card = (rank, index = 0) => ({ id: rank + "-" + index, rank, suit: "♠" });
 
@@ -18,6 +19,95 @@ function position(hand) {
         revolution: false, back: false, reverse: false, pending: null, done: false, last: "",
     };
 }
+
+function bomberPosition(ownRanks, hiddenRanks, sizes, extra = {}) {
+    const deck = shuffledDeck(2);
+    const take = rank => {
+        const index = deck.findIndex(card => card.rank === rank);
+        assert.ok(index >= 0);
+        return deck.splice(index, 1)[0];
+    };
+    const own = ownRanks.map(take);
+    const hidden = hiddenRanks.map(take);
+    const hands = { ai: own };
+    let offset = 0;
+    for (let i = 0; i < sizes.length; i++) {
+        hands["p" + i] = hidden.slice(offset, offset += sizes[i]);
+    }
+    assert.equal(offset, hidden.length);
+    return {
+        ...position(own), order: Object.keys(hands), hands, discard: deck, names: {},
+        table: { cards: [], rank: "Q", owner: "ai" },
+        pending: { kind: "Q", count: 1, choices: [] }, ...extra,
+    };
+}
+
+const twoJokers = { ...defaultSettings, jokerCount: 2 };
+
+test("bomber removes unseen strong blockers even without owning that rank", () => {
+    const round = bomberPosition(["3", "4", "5"], ["2", "2", "A", "A", "K", "K"], [3, 3]);
+    assert.deepEqual(computerMove(round, twoJokers).cards, ["2"]);
+});
+
+test("bomber removes opposing queens to protect a strong hand", () => {
+    const round = bomberPosition(["2", "2", "A", "A", "K"], ["Q", "Q", "Q", "J", "J", "10"], [3, 3]);
+    assert.deepEqual(computerMove(round, twoJokers).cards, ["Q"]);
+    round.bombedRanks = ["Q"];
+    assert.ok(!computerMove(round, twoJokers).cards.includes("Q"));
+});
+
+test("bomber avoids finishing opponents and losing the previous king title", () => {
+    const round = bomberPosition(["3", "A", "2"], ["3", "3"], [1, 1], { previousKing: "ai" });
+    const move = computerMove(round, twoJokers);
+    assert.ok(!move.cards.includes("3"));
+    applyMove(round, twoJokers, "ai", "AI", move);
+    assert.equal(round.fallen, undefined);
+    assert.deepEqual(round.results, []);
+});
+
+test("previous king accepts less self-discard benefit to reduce the risk of dethronement", () => {
+    const round = bomberPosition(["3", "A", "2"],
+        ["3", "K", "K", "K", "J", "J", "J", "10", "10", "10"], [1, 9]);
+    assert.deepEqual(computerMove(round, twoJokers).cards, ["3"]);
+    round.previousKing = "ai";
+    assert.ok(!computerMove(round, twoJokers).cards.includes("3"));
+});
+
+test("revolution changes which unseen ranks are strong blockers", () => {
+    const round = bomberPosition(["2", "A", "K"], ["3", "3", "4", "4", "5", "5"], [3, 3],
+        { revolution: true });
+    assert.deepEqual(computerMove(round, twoJokers).cards, ["3"]);
+});
+
+test("bomber can finish first even if the same removal also finishes opponents", () => {
+    const round = bomberPosition(["3"], ["3", "3"], [1, 1], { previousKing: "ai" });
+    const move = computerMove(round, twoJokers);
+    assert.deepEqual(move.cards, ["3"]);
+    applyMove(round, twoJokers, "ai", "AI", move);
+    assert.deepEqual(round.results, [["ai"], ["p0"], ["p1"]]);
+    assert.equal(round.fallen, undefined);
+    assert.deepEqual(round.bombedRanks, ["3"]);
+});
+
+test("multi-rank bomber choices account for opponents holding a mixture of removed ranks", () => {
+    const round = bomberPosition(["3", "4", "A", "2"], ["3", "4"], [2], { previousKing: "ai" });
+    round.pending.count = 2;
+    const move = computerMove(round, twoJokers);
+    assert.equal(new Set(move.cards).size, 2);
+    assert.ok(!(move.cards.includes("3") && move.cards.includes("4")));
+    applyMove(round, twoJokers, "ai", "AI", move);
+    assert.equal(round.fallen, undefined);
+});
+
+test("bomber decisions use public counts without inspecting or mutating hidden cards", () => {
+    const first = bomberPosition(["2", "A", "3"], ["Q", "Q", "J", "10"], [2, 2]);
+    const second = structuredClone(first);
+    second.hands.p0 = second.hands.p0.map((card, index) => ({ ...card, rank: "2", id: "secret" + index }));
+    second.hands.p1 = second.hands.p1.map((card, index) => ({ ...card, rank: "3", id: "other" + index }));
+    const before = structuredClone(first);
+    assert.deepEqual(computerMove(first, twoJokers), computerMove(second, twoJokers));
+    assert.deepEqual(first, before);
+});
 
 test("takes a finishing play and does not mutate the live round", () => {
     const round = position([card("3"), card("3", 1), card("JK")]);
