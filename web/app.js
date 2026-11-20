@@ -20,8 +20,25 @@ const ui = { mode: invitedCode ? "join" : "create", name: "", code: invitedCode,
 let renderedTable = "";
 let renderedTurn = "";
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+let gesture = null;
+let suppressCardClickUntil = 0;
+
+function layoutHand() {
+  const fan = app.querySelector(".hand-fan");
+  if (!fan) return;
+  const count = fan.querySelectorAll(".fan-slot").length;
+  const width = fan.parentElement.clientWidth - 30;
+  const cardWidth = matchMedia("(max-width: 750px)").matches ? 64 : 82;
+  const step = count > 1 ? Math.max(24, Math.min(48, (width - cardWidth) / (count - 1))) : cardWidth;
+  fan.style.setProperty("--card-step", `${step}px`);
+  fan.style.setProperty("--fan-width", `${Math.max(cardWidth, (count - 1) * step + cardWidth)}px`);
+}
 
 function render() {
+  gesture = null;
+  const oldTable = app.querySelector(".table-cards")?.cloneNode(true);
+  const oldTableBounds = app.querySelector(".table-cards")?.getBoundingClientRect();
+  const handScroll = app.querySelector(".hand-scroll")?.scrollLeft ?? 0;
   const positions = new Map([...app.querySelectorAll(".card-row [data-value]")].map(card =>
     [card.dataset.value, card.getBoundingClientRect()]));
   const scroll = { x: window.scrollX, y: window.scrollY };
@@ -30,6 +47,9 @@ function render() {
     ? ["value", "action", "rule"].find(key => previous.dataset[key] !== undefined)
     : null;
   app.innerHTML = !state ? homeView(ui) : !state.round ? lobbyView(state, ui) : state.round.done ? resultView(state, ui) : matchView(state, ui);
+  layoutHand();
+  const handScroller = app.querySelector(".hand-scroll");
+  if (handScroller) handScroller.scrollLeft = handScroll;
   showClock();
   const round = state?.round;
   const tableKey = round && !round.done
@@ -43,16 +63,35 @@ function render() {
       const after = card.getBoundingClientRect();
       const x = before.left - after.left;
       const y = before.top - after.top;
-      if (x || y) card.animate([
+      if ((x || y) && !card.closest(".hand-fan")) card.animate([
         { transform: `translate(${x}px, ${y + (card.classList.contains("selected") ? -14 : 0)}px)` },
         { transform: card.classList.contains("selected") ? "translateY(-14px)" : "none" },
       ], { duration: 160, easing: "ease-out" });
     }
     if (tableKey && tableKey !== renderedTable && round.table) {
+      const origin = [...app.querySelectorAll("[data-player]")].find(player =>
+        player.dataset.player === round.table.owner)?.getBoundingClientRect();
+      const destination = app.querySelector(".table-cards")?.getBoundingClientRect();
+      const dx = origin && destination ? origin.left + origin.width / 2 - destination.left - destination.width / 2 : 0;
+      const dy = origin && destination ? origin.top + origin.height / 2 - destination.top - destination.height / 2 : 14;
       app.querySelector(".table-cards")?.animate([
-        { opacity: 0, transform: "translateY(14px) scale(.94)" },
+        { opacity: 0, transform: `translate(${dx}px, ${dy}px) scale(.55) rotate(-8deg)` },
         { opacity: 1, transform: "none" },
-      ], { duration: 220, easing: "ease-out" });
+      ], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
+    }
+    if (tableKey && renderedTable && tableKey !== renderedTable && !round.table && oldTableBounds && oldTable?.querySelector(".card")) {
+      oldTable.classList.add("clearing-table");
+      Object.assign(oldTable.style, {
+        left: `${oldTableBounds.left}px`, top: `${oldTableBounds.top}px`,
+        width: `${oldTableBounds.width}px`, height: `${oldTableBounds.height}px`,
+      });
+      oldTable.setAttribute("aria-hidden", "true");
+      document.body.append(oldTable);
+      const animation = oldTable.animate([
+        { opacity: 1, transform: "none" },
+        { opacity: 0, transform: "translateX(100px) rotate(10deg) scale(.8)" },
+      ], { duration: 200, easing: "ease-in", fill: "forwards" });
+      animation.finished.then(() => oldTable.remove(), () => oldTable.remove());
     }
     if (turnKey && turnKey !== renderedTurn && round.turn === state.self && round.pausedAt == null) {
       app.querySelector(".turn-banner")?.animate([
@@ -210,6 +249,7 @@ app.addEventListener("click", event => {
   if (!target || target.disabled || ui.busy) return;
   const { value, action } = target.dataset;
   if (value !== undefined) {
+    if (Date.now() < suppressCardClickUntil) return;
     if (ui.selected.has(value)) ui.selected.delete(value);
     else if (!state.round.pending || ui.selected.size < state.round.pending.count) ui.selected.add(value);
     ui.error = "";
@@ -236,6 +276,29 @@ app.addEventListener("click", event => {
     command(action);
   }
 });
+
+// Track only gestures that start on an already selected playable hand card.
+app.addEventListener("pointerdown", event => {
+  gesture = null;
+  const card = event.target.closest(".hand-fan .card.selected");
+  if (!card || card.disabled || event.isPrimary === false || event.button !== 0) return;
+  card.setPointerCapture(event.pointerId);
+  gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, revision: state?.revision };
+});
+
+app.addEventListener("pointerup", event => {
+  const start = gesture;
+  gesture = null;
+  if (!start || start.id !== event.pointerId || start.revision !== state?.revision) return;
+  const rise = start.y - event.clientY;
+  const sideways = Math.abs(start.x - event.clientX);
+  if (rise < 42 || rise < sideways * 1.4) return;
+  suppressCardClickUntil = Date.now() + 400;
+  const play = app.querySelector('[data-action="play"]');
+  if (play && !play.disabled && !ui.busy) command("play", { cards: [...ui.selected] });
+});
+app.addEventListener("pointercancel", () => { gesture = null; });
+window.addEventListener("resize", layoutHand);
 
 document.addEventListener("keydown", event => {
   if (event.key !== "Escape" || ui.busy || guide.open || !ui.selected.size) return;

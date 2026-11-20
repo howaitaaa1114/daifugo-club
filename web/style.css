@@ -255,3 +255,71 @@ button { touch-action: manipulation; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* The arena and hand share one compact playing surface. */
+.match-room { max-width: 960px; margin-inline: auto; }
+.match-room .felt { border-radius: 22px 22px 0 0; padding-bottom: 12px; background: radial-gradient(ellipse at 50% 65%, #29634e, #113e35 58%, #102e2b); }
+.match-room .felt.revolution { background: radial-gradient(ellipse at 50% 65%, #74363f, #3f222e); }
+.match-room .felt.eleven-back { background: radial-gradient(ellipse at 50% 65%, #59458a, #2e244d); }
+.match-room .felt.revolution.eleven-back { background: linear-gradient(120deg, #673340, #4b377a); }
+.match-room .turn-banner { margin-bottom: 8px; min-height: 42px; padding: 9px 12px; }
+.match-room .turn-direction { margin-top: 0; font-size: .75rem; }
+.match-room .felt-state { margin-top: 5px; font-size: .75rem; }
+.table-arena { position: relative; height: clamp(300px, 39vh, 390px); margin-top: 7px; }
+.table-arena::before { content: ""; position: absolute; inset: 11% 6% 8%; border: 1px solid #cfbf7740; border-radius: 50%; box-shadow: inset 0 0 40px #0002; pointer-events: none; }
+.table-arena .table-players { display: block; position: absolute; inset: 0; }
+.table-arena .table-player { position: absolute; left: var(--seat-x); top: var(--seat-y); transform: translate(-50%, -50%); width: 124px; min-height: 78px; display: grid; grid-template-columns: 30px 1fr; gap: 5px 6px; background: #112720e8; border-color: #adc5a454; padding: 9px; border-radius: 11px; }
+.table-arena .table-player .avatar { width: 30px; height: 34px; border-radius: 7px; font-size: 20px; background: #365d51; }
+.table-arena .table-player > span:nth-child(2) { grid-column: 1 / -1; grid-row: 2; text-align: center; }
+.table-arena .table-player strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-arena .table-player small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.table-arena .table-player .hand-count, .table-arena .table-player .finished-mark { grid-column: 2; grid-row: 1; margin: 0; }
+.table-arena .table-player .hand-count small { display: inline; }
+.table-arena .table-player.current { border-color: var(--gold); background: #51462be8; box-shadow: 0 0 0 2px #f5cd8025; }
+.table-arena .table-player.passed .avatar { opacity: .5; }
+.table-arena .table-player.passed::after { content: "PASS"; position: absolute; top: -10px; left: 50%; transform: translateX(-50%); color: #ffe4a6; background: #594522; border: 1px solid #b49554; padding: 1px 7px; border-radius: 4px; font: 700 12px "Barlow Semi Condensed", sans-serif; }
+.table-arena .table-center { position: absolute; top: 60%; left: 50%; transform: translate(-50%, -50%); width: 53%; padding: 0; }
+.table-arena .table-center > p { color: #cfdecf; }
+.table-arena .table-cards { flex-wrap: nowrap; gap: 0; min-height: 108px; }
+.table-arena .table-cards .card { width: 76px; height: 106px; margin-right: -25px; }
+.table-arena .table-cards .card:nth-child(odd) { rotate: -4deg; }
+.table-arena .table-cards .card:nth-child(even) { rotate: 5deg; }
+.table-arena .table-cards .card:last-child { margin-right: 0; }
+.match-room .last-move { margin-top: 0; }
+.match-room .hand-panel { margin-top: 0; background: linear-gradient(#143b32, #172c2b); border-color: #829c9c6b; border-radius: 0 0 22px 22px; border-top: 0; padding-top: 10px; }
+.match-room .hand-panel h2 { font-size: .9rem; }
+.match-room .hand-panel > .muted { font-size: .78rem; }
+.hand-scroll { overflow-x: auto; scrollbar-width: thin; scrollbar-color: #bdc6a855 transparent; }
+.hand-panel .hand-fan { flex-wrap: nowrap; width: var(--fan-width); min-height: 157px; gap: 0; margin-inline: auto; padding: 27px 0 24px; }
+.fan-slot { flex: 0 0 var(--card-step); width: var(--card-step); transform: translateY(var(--fan-drop)) rotate(var(--fan-angle)); transform-origin: 50% 100%; }
+.fan-slot:last-child { flex-basis: 82px; width: 82px; }
+.hand-panel .hand-fan .card { width: 82px; height: 112px; margin-right: 0; touch-action: pan-x; transition: transform 140ms ease-out, background-color 140ms ease-out; }
+.hand-panel .hand-fan .card:disabled { background: #d5d5c7; border-color: #b6b9aa; color: #777c76; }
+.hand-panel .hand-fan .card.selected { transform: translateY(-22px); outline-offset: 1px; }
+.fan-slot:has(.selected), .fan-slot:has(:focus-visible) { position: relative; z-index: 2; }
+.gesture-hint { text-align: center; font-size: .72rem; color: #c0cfbe; padding: 4px 0 10px; }
+.match-room .hand-actions { background: #172c2b; margin-inline: -20px; padding-inline: 20px; border-radius: 0 0 22px 22px; }
+.match-room .hand-actions .primary { background: linear-gradient(#ffe2a1, #edb958); border-color: #ffe4ab; box-shadow: 0 3px 0 #856736; }
+.match-room .hand-actions .primary:disabled { box-shadow: none; }
+.clearing-table { position: fixed; z-index: 8; pointer-events: none; }
+@media (hover: hover) {
+  .fan-slot:hover { position: relative; z-index: 3; }
+}
+@media (max-width: 750px) {
+  .table-arena { height: clamp(285px, 38svh, 360px); }
+  .table-arena .table-player { width: 76px; min-height: 69px; grid-template-columns: 24px 1fr; gap: 3px; padding: 6px; }
+  .table-arena .table-player .avatar { width: 24px; height: 29px; font-size: 17px; }
+  .table-arena .table-player strong { font-size: .72rem; }
+  .table-arena .table-player small { font-size: .56rem; }
+  .table-arena .table-player .hand-count { font-size: 23px; }
+  .table-arena .table-player .turn-tag { font-size: .6rem; right: 3px; }
+  .table-arena:is([data-seats="7"], [data-seats="8"]) .table-player:not(.self) { width: clamp(56px, 18vw, 76px); padding-inline: 4px; }
+  .table-arena .table-cards .card { width: 62px; height: 88px; margin-right: -29px; }
+  .table-arena .table-cards { min-height: 90px; }
+  .match-room .hand-panel { padding-inline: 12px; }
+  .hand-panel .hand-fan { min-height: 137px; }
+  .fan-slot:last-child { flex-basis: 64px; width: 64px; }
+  .hand-panel .hand-fan .card { width: 64px; height: 94px; }
+  .match-room .hand-actions { margin-inline: -12px; padding-inline: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .match-room .hand-panel .section-heading { margin-bottom: 2px; }
+}
