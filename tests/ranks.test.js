@@ -85,16 +85,16 @@ test("first challenger forces the previous king into last place and skips their 
     assert.deepEqual(round.results, [["b"], ["d"], ["c"], ["a"]]);
 });
 
-test("previous king keeps the title when finishing first, including a tied bomber finish", () => {
+test("previous king keeps the title only when ranking first after bomber resolution", () => {
     const round = position({ a: [card("3")], b: [card("4")], c: [card("5")] }, "a");
     applyMove(round, noEffects, "a", "A", { type: "play", cards: ["3-0"] });
     assert.equal(round.fallen, undefined);
-    const tied = position({ a: [card("3")], b: [card("3", 1)], c: [card("4"), card("5")] }, "b");
-    tied.table = { cards: [card("Q")], rank: "Q", owner: "b" };
+    const tied = position({ a: [card("3")], b: [card("3", 1)], c: [card("4"), card("5")] }, "a");
+    tied.table = { cards: [card("Q")], rank: "Q", owner: "a" };
     tied.pending = { kind: "Q", count: 1, choices: [] };
-    applyMove(tied, noEffects, "b", "B", { type: "resolve", cards: ["3"] });
+    applyMove(tied, noEffects, "a", "A", { type: "resolve", cards: ["3"] });
     assert.equal(tied.fallen, undefined);
-    assert.deepEqual(tied.results[0], ["a", "b"]);
+    assert.deepEqual(tied.results, [["a"], ["b"], ["c"]]);
 });
 
 test("first finish after seven-give also triggers dethronement", () => {
@@ -107,13 +107,59 @@ test("first finish after seven-give also triggers dethronement", () => {
     assert.deepEqual(round.results, [["b"], ["c"], ["a"]]);
 });
 
-test("a tied first place without the previous king still forces last place", () => {
+test("multiple bomber finishers receive distinct places before the fallen king", () => {
     const round = position({ a: [card("K")], b: [card("3")], c: [card("3", 1)], d: [card("5")] });
     round.table = { cards: [card("Q")], rank: "Q", owner: "b" };
     round.pending = { kind: "Q", count: 1, choices: [] };
     applyMove(round, noEffects, "b", "B", { type: "resolve", cards: ["3"] });
     assert.equal(round.fallen, "a");
-    assert.deepEqual(round.results, [["b", "c"], ["d"], ["a"]]);
+    assert.deepEqual(round.results, [["b"], ["c"], ["d"], ["a"]]);
+});
+
+test("bomber ranks its actor first then clockwise across the seat boundary even during reverse", () => {
+    for (const reverse of [false, true]) {
+        const round = position({
+            a: [card("3", 0)], b: [card("3", 1)], c: [card("3", 2)], d: [card("3", 3)],
+        }, "c");
+        delete round.previousKing;
+        round.reverse = reverse;
+        round.table = { cards: [card("Q")], rank: "Q", owner: "c" };
+        round.pending = { kind: "Q", count: 1, choices: [] };
+        applyMove(round, noEffects, "c", "C", { type: "resolve", cards: ["3"] });
+        assert.equal(round.done, true);
+        assert.deepEqual(round.results, [["c"], ["d"], ["a"], ["b"]]);
+        const next = startRound(round.order, 1, round.results);
+        assert.equal(next.previousRanks.c, "大富豪");
+        assert.equal(next.previousRanks.d, "富豪");
+        assert.equal(next.previousRanks.a, "貧民");
+        assert.equal(next.previousRanks.b, "大貧民");
+        assert.equal(next.exchange[0].target, "b");
+        assert.equal(next.exchange[1].from, "d");
+        assert.equal(next.exchange[1].target, "a");
+    }
+});
+
+test("bomber skips its actor if they retain cards, and preserves already awarded places", () => {
+    const round = position({
+        a: [], b: [card("3", 1)], c: [card("4")], d: [card("3", 3)],
+    }, "c");
+    round.results = [["a"]];
+    round.reverse = true;
+    round.table = { cards: [card("Q")], rank: "Q", owner: "c" };
+    round.pending = { kind: "Q", count: 1, choices: [] };
+    applyMove(round, noEffects, "c", "C", { type: "resolve", cards: ["3"] });
+    assert.deepEqual(round.results, [["a"], ["d"], ["b"], ["c"]]);
+});
+
+test("a previous king eliminated simultaneously after another winner still falls to last", () => {
+    const round = position({
+        a: [card("3")], b: [card("3", 1)], c: [card("3", 2)], d: [card("4")],
+    }, "b");
+    round.table = { cards: [card("Q")], rank: "Q", owner: "b" };
+    round.pending = { kind: "Q", count: 1, choices: [] };
+    applyMove(round, noEffects, "b", "B", { type: "resolve", cards: ["3"] });
+    assert.equal(round.fallen, "a");
+    assert.deepEqual(round.results, [["b"], ["c"], ["d"], ["a"]]);
 });
 
 test("first round, changed roster or invalid prior rankings start normally", () => {

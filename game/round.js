@@ -77,13 +77,13 @@ function active(round, id) {
 }
 function settle(round, candidates) {
     const finished = candidates.filter((id)=>id !== round.fallen && !active(round, id) && !round.results.flat().includes(id));
-    if (!round.results.length && finished.length && round.previousKing && !finished.includes(round.previousKing)) {
+    if (!round.results.length && finished.length && round.previousKing && finished[0] !== round.previousKing) {
         round.fallen = round.previousKing;
         // Eliminated cards stay out of the discard pile, including pickup choices.
         round.hands[round.fallen] = [];
         round.last += ` · ${round.names[round.fallen] ?? "前回の大富豪"}が都落ち`;
     }
-    if (finished.length) round.results.push(finished);
+    round.results.push(...finished.filter(id => id !== round.fallen).map(id => [id]));
     const remaining = round.order.filter((id)=>active(round, id));
     if (remaining.length <= 1) {
         if (remaining.length) round.results.push(remaining);
@@ -165,7 +165,10 @@ function resolve(round, actor, values) {
     ];
     if (effect.kind === "Q") {
         requireRule(new Set(values).size === values.length && values.every(rank => bomberRanks.includes(rank)), "除外する数字やジョーカーを選び直してください。");
-        candidates = round.order.filter((id)=>id === actor || active(round, id));
+        const seat = round.order.indexOf(actor);
+        // Bomber ranking always runs clockwise, independently of 9-reverse.
+        candidates = [...round.order.slice(seat), ...round.order.slice(0, seat)]
+            .filter(id => id === actor || active(round, id));
         for (const id of candidates){
             round.hands[id] = round.hands[id].filter((card)=>!values.includes(card.rank));
         }
