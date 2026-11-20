@@ -98,7 +98,8 @@ export function runCommand(room, player, command, now = Date.now()) {
         case "start":
             requireRule(!room.round || room.round.done, "対戦中です。");
             requireRule(room.players.length >= 2, "2人以上で開始できます。");
-            room.round = startRound(room.players.map(candidate => candidate.id), room.settings.jokerCount);
+            if (room.round?.done) room.previousResults = room.round.results.map(group => [...group]);
+            room.round = startRound(room.players.map(candidate => candidate.id), room.settings.jokerCount, room.previousResults);
             resetClock(room, now);
             room.round.names = Object.fromEntries(room.players.map((candidate)=>[
                     candidate.id,
@@ -107,6 +108,7 @@ export function runCommand(room, player, command, now = Date.now()) {
             break;
         case "lobby":
             requireRule(room.round?.done, "対戦終了後に設定を変更できます。");
+            room.previousResults = room.round.results.map(group => [...group]);
             room.round = null;
             break;
         case "pause":
@@ -150,6 +152,7 @@ export function roomView(room, self, revision) {
         for (const id of group) places.set(id, place);
         place += group.length;
     }
+    if (round?.fallen) places.set(round.fallen, room.players.length);
     const playersById = new Map(room.players.map(player => [player.id, player]));
     const players = round ? round.order.map(id => playersById.get(id)).filter(Boolean) : room.players;
     return {
@@ -165,6 +168,8 @@ export function roomView(room, self, revision) {
                 name,
                 cards: round?.hands[id]?.length ?? 0,
                 passed: round?.passed.includes(id) ?? false,
+                previousRank: round?.previousRanks?.[id] ?? null,
+                fallen: round?.fallen === id,
                 place: places.get(id) ?? -1
             })),
         round: round && {
@@ -180,8 +185,10 @@ export function roomView(room, self, revision) {
                 kind: round.pending.kind,
                 count: round.pending.count,
                 target: round.pending.target,
-                choices: round.turn === self ? round.pending.choices : []
+                choices: round.turn === self ? round.pending.choices : [],
+                tribute: round.turn === self ? round.pending.tribute ?? [] : []
             },
+            fallen: round.fallen ?? null,
             revolution: round.revolution,
             back: round.back,
             reverse: round.reverse === true,

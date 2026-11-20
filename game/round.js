@@ -1,5 +1,7 @@
 import { bomberRanks, pickCards, rankName, requireRule, shuffle, shuffledDeck, strength, withoutCards } from "./cards.js";
-export function startRound(players, jokerCount) {
+import { placeName } from "./rules.js";
+
+export function startRound(players, jokerCount, previousResults = []) {
     const order = shuffle(players);
     const hands = Object.fromEntries(order.map((id)=>[
             id,
@@ -9,7 +11,7 @@ export function startRound(players, jokerCount) {
     deck.forEach((card, i) => hands[order[i % order.length]].push(card));
     const turn = order.find(id => hands[id].some(card => card.id === "3♦"));
     Object.values(hands).forEach((hand)=>hand.sort((a, b)=>strength(a.rank) - strength(b.rank)));
-    return {
+    const round = {
         order,
         names: {},
         hands,
@@ -25,6 +27,45 @@ export function startRound(players, jokerCount) {
         last: "♦3を持つプレイヤーからスタート",
         done: false
     };
+    const ranking = previousResults.flat();
+    const validRanking = ranking.length === players.length && new Set(ranking).size === players.length
+        && ranking.every(id => players.includes(id)) && previousResults.every(group => group.length === 1);
+    if (validRanking) {
+        round.previousKing = ranking[0];
+        round.previousRanks = Object.fromEntries(ranking.map((id, index) => [id, placeName(index + 1, players.length)]));
+        const pairs = [[ranking[0], ranking.at(-1), 2]];
+        if (players.length >= 4) pairs.push([ranking[1], ranking.at(-2), 1]);
+        round.exchange = pairs.map(([from, target, count]) => ({
+            from, target, count,
+            choices: [...hands[from]],
+            tribute: [...hands[target]].sort((a, b) => strength(b.rank) - strength(a.rank)).slice(0, count),
+        }));
+        nextExchange(round);
+    }
+    return round;
+}
+
+function nextExchange(round) {
+    const next = round.exchange[0];
+    if (next) {
+        round.turn = next.from;
+        round.pending = { kind: "exchange", count: next.count, target: next.target, choices: next.choices, tribute: next.tribute };
+        round.last = `${round.previousRanks[next.from]}が交換するカードを選んでいます`;
+    } else {
+        round.pending = null;
+        round.turn = round.order.find(id => round.hands[id].some(card => card.id === "3♦"));
+        round.last = "カード交換完了 · ♦3を持つプレイヤーからスタート";
+    }
+}
+
+function exchangeCards(round, actor, values) {
+    const effect = round.pending;
+    requireRule(Array.isArray(values) && values.length === effect.count, `渡すカードを${effect.count}枚選んでください。`);
+    const cards = pickCards(effect.choices, values);
+    round.hands[actor] = [...withoutCards(round.hands[actor], cards), ...effect.tribute];
+    round.hands[effect.target] = [...withoutCards(round.hands[effect.target], effect.tribute), ...cards];
+    round.exchange.shift();
+    nextExchange(round);
 }
 export function following(round, id) {
     const order = round.reverse ? [...round.order].reverse() : round.order;
@@ -35,11 +76,18 @@ function active(round, id) {
     return round.hands[id].length > 0;
 }
 function settle(round, candidates) {
-    const finished = candidates.filter((id)=>!active(round, id) && !round.results.flat().includes(id));
+    const finished = candidates.filter((id)=>id !== round.fallen && !active(round, id) && !round.results.flat().includes(id));
+    if (!round.results.length && finished.length && round.previousKing && !finished.includes(round.previousKing)) {
+        round.fallen = round.previousKing;
+        // Eliminated cards stay out of the discard pile, including pickup choices.
+        round.hands[round.fallen] = [];
+        round.last += ` · ${round.names[round.fallen] ?? "前回の大富豪"}が都落ち`;
+    }
     if (finished.length) round.results.push(finished);
     const remaining = round.order.filter((id)=>active(round, id));
     if (remaining.length <= 1) {
         if (remaining.length) round.results.push(remaining);
+        if (round.fallen) round.results.push([round.fallen]);
         round.done = true;
     }
 }
@@ -150,6 +198,10 @@ export function applyMove(round, settings, actor, name, move) {
     requireRule(!round.done && round.turn === actor, "今はあなたの手番ではありません。");
     if (round.pending) {
         requireRule(move.type === "resolve", "役の処理を完了してください。");
+        if (round.pending.kind === "exchange") {
+            exchangeCards(round, actor, move.cards);
+            return;
+        }
         resolve(round, actor, move.cards);
         return;
     }

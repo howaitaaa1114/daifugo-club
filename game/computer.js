@@ -55,7 +55,7 @@ function resolveEffect(round, settings) {
         const candidates = [...remaining];
         const cost = card => {
             const after = remaining.filter(item => item.id !== card.id);
-            const gift = effect.kind === "7"
+            const gift = effect.kind === "7" || effect.kind === "exchange"
                 ? strength(card.rank, reversed) * 0.25 + (settings[card.rank] && ["8", "10", "Q"].includes(card.rank) ? 2 : 0)
                 : 0;
             return handCost(after, round, settings) + gift;
@@ -106,6 +106,7 @@ function scoreMove(round, settings, move, opponents) {
     if (simulated.pending) {
         applyMove(simulated, settings, actor, "", resolveEffect(simulated, settings));
     }
+    if (simulated.fallen === actor) return -10000;
     if (simulated.results.some(group => group.includes(actor))) return 10000;
     let score = handCost(round.hands[actor], round, settings)
         - handCost(simulated.hands[actor], simulated, settings);

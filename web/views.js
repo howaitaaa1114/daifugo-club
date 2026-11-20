@@ -123,7 +123,8 @@ function playersView(state) {
     const [x, y] = seats[index] ?? [14, 85];
     return `<div data-player="${escape(player.id)}" style="--seat-x:${x}%;--seat-y:${y}%" class="table-player${active ? " current" : ""}${player.id === state.self ? " self" : ""}${player.passed ? " passed" : ""}"><span class="avatar">${escape(Array.from(player.name)[0])}</span>
       <span><strong>${escape(player.name)}</strong><small>${player.id === state.self ? "あなた · " : ""}${player.id === state.owner ? "ホスト · " : ""}${player.place > 0 ? placeName(player.place, state.players.length) : player.passed ? "パス" : `残り ${player.cards} 枚`}</small></span>
-      ${player.place > 0 ? '<b class="finished-mark">上がり</b>' : `<b class="hand-count" aria-label="残り${player.cards}枚">${player.cards}<small>枚</small></b>`}
+      ${player.fallen ? '<b class="rank-title fallen-title">都落ち</b>' : player.previousRank ? `<b class="rank-title">${escape(player.previousRank)}</b>` : ""}
+      ${player.place > 0 ? `<b class="finished-mark">${player.fallen ? "敗退" : "上がり"}</b>` : `<b class="hand-count" aria-label="残り${player.cards}枚">${player.cards}<small>枚</small></b>`}
       ${active ? '<b class="turn-tag">手番</b>' : ""}</div>`;
   }).join("")}</div>`;
 }
@@ -134,6 +135,7 @@ function handView(state, ui, mine) {
   if (pending && mine) {
     const target = state.players.find(player => player.id === pending.target)?.name;
     const title = {
+      "exchange": `${escape(target)} に渡すカードを${pending.count}枚選んでください`,
       "7": `${escape(target)} に渡すカードを${pending.count}枚選んでください`,
       "9": `捨て札から拾うカードを${pending.count}枚まで選べます`,
       "10": `捨てるカードを${pending.count}枚選んでください`,
@@ -141,12 +143,13 @@ function handView(state, ui, mine) {
     }[pending.kind];
     return `<section class="panel hand-panel">
       <h2>${title}</h2>
+      ${pending.kind === "exchange" ? `<p class="muted compact">配られた手札から返す札を選ぶと、相手の強い札${pending.count}枚と交換します。</p><div class="exchange-preview"><span>受け取る札</span>${pending.tribute.map(card => `<span class="exchange-card${"♥♦".includes(card.suit) ? " red" : ""}">${escape(card.suit)} ${escape(rankName(card.rank))}</span>`).join("")}</div>` : ""}
       <div class="card-row choices">
       ${pending.kind === "Q"
         ? bomberRanks.map(rank => `<button class="rank-choice${ui.selected.has(rank) ? " selected" : ""}" type="button" aria-pressed="${ui.selected.has(rank)}" data-value="${rank}"${disabled(locked || (!ui.selected.has(rank) && ui.selected.size >= pending.count))}>${rankName(rank)}</button>`).join("")
         : pending.choices.map(card => cardTile(card, ui.selected.has(card.id), locked || (!ui.selected.has(card.id) && ui.selected.size >= pending.count))).join("")}
       </div>
-      <div class="actions hand-actions"><span class="selection-count" role="status">${ui.selected.size} / ${pending.count}${pending.kind === "Q" ? "種類" : "枚"} 選択</span>${button("clear-selection", "選択解除", "ghost", locked || !ui.selected.size)}${button("resolve", pending.kind === "9" && !ui.selected.size ? "拾わない" : "確定する", "primary", locked || (pending.kind !== "9" && ui.selected.size !== pending.count))}</div>
+      <div class="actions hand-actions"><span class="selection-count" role="status">${ui.selected.size} / ${pending.count}${pending.kind === "Q" ? "種類" : "枚"} 選択</span>${button("clear-selection", "選択解除", "ghost", locked || !ui.selected.size)}${button("resolve", pending.kind === "exchange" ? "交換する" : pending.kind === "9" && !ui.selected.size ? "拾わない" : "確定する", "primary", locked || (pending.kind !== "9" && ui.selected.size !== pending.count))}</div>
       ${pending.kind === "Q" ? `<h2 class="reference-title">あなたの手札</h2><div class="card-row reference">${hand.length ? hand.map(card => `<div class="${cardClass(card)}">${cardFace(card)}</div>`).join("") : '<p class="muted">手札はありません</p>'}</div>` : ""}
     </section>`;
   }
@@ -158,10 +161,12 @@ function handView(state, ui, mine) {
   const allowed = card => ui.selected.has(card.id) || groups.some(group => fits(group, [...selected, card.id]));
   const ready = selected.length > 0 && groups.some(group => (!table || selected.length === group.count)
     && fits(group, selected));
-  const hint = !mine || !hand.length ? "" : !table ? "同じ数字のカードを1枚以上選べます。"
+  const me = state.players.find(player => player.id === state.self);
+  const hint = pending?.kind === "exchange" ? "カード交換が終わるまでお待ちください。"
+    : me?.fallen ? "都落ちで大貧民が確定しました。残りの対戦を観戦できます。"
+    : !mine || !hand.length ? "" : !table ? "同じ数字のカードを1枚以上選べます。"
     : !groups.length ? "場に出せるカードがありません。「パス」を押してください。"
     : `場札の${rankName(table.rank)}より強い組を${table.cards.length}枚選んでください（${selected.length}枚選択中）。`;
-  const me = state.players.find(player => player.id === state.self);
   return `<section class="panel hand-panel">
     <div class="section-heading"><h2>あなたの手札</h2><span>${hand.length} 枚</span></div>
     ${hint ? `<p class="muted">${hint}</p>` : ""}
@@ -183,7 +188,9 @@ export function matchView(state, ui) {
   const current = state.players.find(player => player.id === round.turn)?.name;
   const reversed = round.revolution !== round.back;
   const paused = round.pausedAt != null;
-  const turn = mine ? "あなたの手番" : `${escape(current)} の手番`;
+  const exchanging = round.pending?.kind === "exchange";
+  const turn = exchanging ? mine ? "カード交換 · 渡す札を選択" : `${escape(current)} がカード交換中`
+    : mine ? "あなたの手番" : `${escape(current)} の手番`;
   return `<div class="match-room">${roomHeader(state, "対戦テーブル", "", ui.busy, state.solo)}
     ${message(ui.error, ui.notice)}
     <section class="felt${mine && !paused ? " my-turn" : ""}${paused ? " paused" : ""}${round.revolution ? " revolution" : ""}${round.back ? " eleven-back" : ""}">
@@ -195,7 +202,7 @@ export function matchView(state, ui) {
       ${playersView(state)}
       <div class="table-center">
         <p>場札${round.table?.rank !== "JK" && round.table?.cards.some(card => card.rank === "JK") ? ` · ${round.table.rank}として出札` : ""}</p>
-        <div class="table-cards">${round.table ? round.table.cards.map(card => `<div class="${cardClass(card)}">${cardFace(card)}</div>`).join("") : '<div class="empty-table"><span>♠</span><strong>場が空いています</strong><small>好きな数字から出せます</small></div>'}</div>
+        <div class="table-cards">${round.table ? round.table.cards.map(card => `<div class="${cardClass(card)}">${cardFace(card)}</div>`).join("") : exchanging ? '<div class="empty-table"><span>⇄</span><strong>カード交換中</strong><small>交換完了後に対戦開始</small></div>' : '<div class="empty-table"><span>♠</span><strong>場が空いています</strong><small>好きな数字から出せます</small></div>'}</div>
       </div>
       </div>
       <p class="last-move" role="status">${escape(round.last)}</p>
@@ -216,7 +223,7 @@ export function resultView(state, ui) {
       ${state.round.results.map(group => {
         const rank = place;
         place += group.length;
-        return `<div class="result-row"><span>${placeName(rank, state.round.results.flat().length)} · ${rank}位${group.length > 1 ? "（同順位）" : ""}</span><strong>${group.map(player => escape(player.name)).join("、")}</strong></div>`;
+        return `<div class="result-row"><span>${placeName(rank, state.round.results.flat().length)} · ${rank}位${group.length > 1 ? "（同順位）" : ""}</span><strong>${group.map(player => escape(player.name) + (player.id === state.round.fallen ? ' <small class="fallen-label">都落ち</small>' : "")).join("、")}</strong></div>`;
       }).join("")}
       <div class="actions">${host
         ? button("start", "もう一度遊ぶ", "primary", ui.busy || state.players.length < 2) + button("lobby", "ロビーに戻る", "secondary", ui.busy)
@@ -228,6 +235,8 @@ export const guideView = `<h2>遊び方</h2>
   <p>「ひとりで遊ぶ」を選ぶとAI3人との対戦が始まります。友だちと遊ぶときは、部屋を作るか、招待リンク・部屋コードで参加します。オンライン対戦は2〜${maxPlayers}人です。</p>
   <p>手札をタップして選び、「出す」を押します。選んだ札を上へフリックしても出せます。横に収まらない手札は左右にスクロールできます。「選択解除」またはEscキーで選び直せます。</p>
   <p>毎ラウンド席順をシャッフルし、♦3を持つ人が最初の手番になります。</p>
+  <p>同じメンバーで再戦すると前回の階級を引き継ぎます。大貧民は最も強い2枚を大富豪へ渡し、大富豪は配られた手札から2枚を選んで返します。4人以上では貧民と富豪も同様に1枚交換します。強さはジョーカー、2、A、K…3の順です。交換後に♦3を持つ人から始めます。</p>
+  <p>最初に上がった人の中に前回の大富豪がいなければ、前回の大富豪は都落ちで大貧民となり、以降は観戦します。同時に最初に上がった人の中に前回の大富豪が含まれる場合は都落ちしません。参加メンバーが変わった場合や前回の結果に同順位がある場合は、次の対戦で階級をリセットします。</p>
   <p>同じ数字をまとめて出せます。場札があるときは、同じ枚数でより強い数字を出すかパスします。誰かが新しい札を出すと、前にパスした人にも手番が回ります。最後の出札のあと、ほかの人が全員パスすると場が流れます。</p>
   <p>通常は 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → J → Q → K → A → 2 の順に強くなります。ジョーカー単体は最強です。組に加えたジョーカーは同じ数字として数え、役も発動します。</p>
   <p>持ち時間は${turnSeconds}秒です。時間切れは自動でパスします。役の選択中なら自動で処理します。ホストが時間切れになると、席順で次の人にホスト権が移ります。</p>
