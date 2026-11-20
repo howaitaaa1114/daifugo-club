@@ -108,8 +108,9 @@ export function lobbyView(state, { busy, error, notice }) {
 function playersView(state) {
   return `<div class="table-players">${state.players.map(player => {
     const active = player.id === state.round.turn;
-    return `<div class="table-player${active ? " current" : ""}"><span class="avatar">${escape(Array.from(player.name)[0])}</span>
+    return `<div class="table-player${active ? " current" : ""}${player.id === state.self ? " self" : ""}"><span class="avatar">${escape(Array.from(player.name)[0])}</span>
       <span><strong>${escape(player.name)}</strong><small>${player.id === state.self ? "あなた · " : ""}${player.id === state.owner ? "ホスト · " : ""}${player.place > 0 ? placeName(player.place, state.players.length) : player.passed ? "パス" : `残り ${player.cards} 枚`}</small></span>
+      ${player.place > 0 ? '<b class="finished-mark">上がり</b>' : `<b class="hand-count" aria-label="残り${player.cards}枚">${player.cards}<small>枚</small></b>`}
       ${active ? '<b class="turn-tag">手番</b>' : ""}</div>`;
   }).join("")}</div>`;
 }
@@ -132,7 +133,7 @@ function handView(state, ui, mine) {
         ? bomberRanks.map(rank => `<button class="rank-choice${ui.selected.has(rank) ? " selected" : ""}" type="button" aria-pressed="${ui.selected.has(rank)}" data-value="${rank}"${disabled(locked || (!ui.selected.has(rank) && ui.selected.size >= pending.count))}>${rankName(rank)}</button>`).join("")
         : pending.choices.map(card => cardTile(card, ui.selected.has(card.id), locked || (!ui.selected.has(card.id) && ui.selected.size >= pending.count))).join("")}
       </div>
-      <div class="actions">${button("resolve", pending.kind === "9" && !ui.selected.size ? "拾わない" : "確定する", "primary", locked || (pending.kind !== "9" && ui.selected.size !== pending.count))}</div>
+      <div class="actions hand-actions"><span class="selection-count" role="status">${ui.selected.size} / ${pending.count}${pending.kind === "Q" ? "種類" : "枚"} 選択</span>${button("clear-selection", "選択解除", "ghost", locked || !ui.selected.size)}${button("resolve", pending.kind === "9" && !ui.selected.size ? "拾わない" : "確定する", "primary", locked || (pending.kind !== "9" && ui.selected.size !== pending.count))}</div>
       ${pending.kind === "Q" ? `<h2 class="reference-title">あなたの手札</h2><div class="card-row reference">${hand.length ? hand.map(card => `<div class="${cardClass(card)}">${cardFace(card)}</div>`).join("") : '<p class="muted">手札はありません</p>'}</div>` : ""}
     </section>`;
   }
@@ -152,7 +153,10 @@ function handView(state, ui, mine) {
     <div class="section-heading"><h2>あなたの手札</h2><span>${hand.length} 枚</span></div>
     ${hint ? `<p class="muted">${hint}</p>` : ""}
     <div class="card-row">${hand.length ? hand.map(card => cardTile(card, ui.selected.has(card.id), locked || !allowed(card))).join("") : `<p class="muted">${me.place > 0 ? placeName(me.place, state.players.length) : "手札はありません"}</p>`}</div>
-    <div class="actions">${button("play", "カードを出す", "primary", locked || !ready)}${button("pass", "パス", "secondary", locked || !table)}</div>
+    <div class="actions hand-actions"><span class="selection-count" role="status">${selected.length ? `${selected.length}枚 選択中` : mine ? "カードを選択" : "相手の手番です"}</span>
+      ${button("clear-selection", "選択解除", "ghost", locked || !selected.length)}
+      ${button("pass", "パス", "secondary", locked || !table)}
+      ${button("play", ui.busy ? "送信中…" : selected.length ? `${selected.length}枚を出す` : "カードを出す", "primary", locked || !ready)}</div>
   </section>`;
 }
 
@@ -165,7 +169,7 @@ export function matchView(state, ui) {
   const turn = mine ? "あなたの手番" : `${escape(current)} の手番`;
   return `${roomHeader(state, "対戦テーブル", "", ui.busy, state.solo)}
     ${message(ui.error, ui.notice)}
-    <section class="felt${round.revolution ? " revolution" : ""}${round.back ? " eleven-back" : ""}">
+    <section class="felt${mine && !paused ? " my-turn" : ""}${paused ? " paused" : ""}${round.revolution ? " revolution" : ""}${round.back ? " eleven-back" : ""}">
       <div class="turn-banner${mine ? " mine" : ""}"><strong role="status">${paused ? "一時停止中" : turn}</strong>
         <span class="turn-clock" data-clock aria-label="残り時間"></span></div>
       ${playersView(state)}
@@ -173,7 +177,7 @@ export function matchView(state, ui) {
       <div class="felt-state"><span>${round.revolution ? '<b class="effect-badge">革命</b> ' : ""}${round.back ? '<b class="effect-badge">イレブンバック</b> ' : ""}${reversed ? "逆順（3が最強）" : "通常順（2が最強）"}<small> · ジョーカーを除く</small></span><span>捨て札 ${round.discardCount} 枚</span></div>
       <div class="table-center">
         <p>場札${round.table?.rank !== "JK" && round.table?.cards.some(card => card.rank === "JK") ? ` · ${round.table.rank}として出札` : ""}</p>
-        <div class="table-cards">${round.table ? round.table.cards.map(card => `<div class="${cardClass(card)}">${cardFace(card)}</div>`).join("") : '<div class="card placeholder">♠</div>'}</div>
+        <div class="table-cards">${round.table ? round.table.cards.map(card => `<div class="${cardClass(card)}">${cardFace(card)}</div>`).join("") : '<div class="empty-table"><span>♠</span><strong>場が空いています</strong><small>好きな数字から出せます</small></div>'}</div>
       </div>
       <p class="last-move" role="status">${escape(round.last)}</p>
     </section>

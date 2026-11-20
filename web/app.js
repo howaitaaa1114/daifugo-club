@@ -17,18 +17,56 @@ let state = null;
 let syncing = false;
 let clockOffset = 0;
 const ui = { mode: invitedCode ? "join" : "create", name: "", code: invitedCode, busy: false, error: "", notice: "", selected: new Set() };
+let renderedTable = "";
+let renderedTurn = "";
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
 function render() {
+  const positions = new Map([...app.querySelectorAll(".card-row [data-value]")].map(card =>
+    [card.dataset.value, card.getBoundingClientRect()]));
+  const scroll = { x: window.scrollX, y: window.scrollY };
   const previous = document.activeElement;
   const focus = previous && app.contains(previous)
     ? ["value", "action", "rule"].find(key => previous.dataset[key] !== undefined)
     : null;
   app.innerHTML = !state ? homeView(ui) : !state.round ? lobbyView(state, ui) : state.round.done ? resultView(state, ui) : matchView(state, ui);
   showClock();
+  const round = state?.round;
+  const tableKey = round && !round.done
+    ? JSON.stringify([state.code, round.table?.owner, round.table?.cards.map(card => card.id)])
+    : "";
+  const turnKey = round && !round.done ? `${state.code}:${round.turn}:${round.pausedAt ?? ""}` : "";
+  if (!reducedMotion.matches) {
+    for (const card of app.querySelectorAll(".card-row [data-value]")) {
+      const before = positions.get(card.dataset.value);
+      if (!before) continue;
+      const after = card.getBoundingClientRect();
+      const x = before.left - after.left;
+      const y = before.top - after.top;
+      if (x || y) card.animate([
+        { transform: `translate(${x}px, ${y + (card.classList.contains("selected") ? -14 : 0)}px)` },
+        { transform: card.classList.contains("selected") ? "translateY(-14px)" : "none" },
+      ], { duration: 160, easing: "ease-out" });
+    }
+    if (tableKey && tableKey !== renderedTable && round.table) {
+      app.querySelector(".table-cards")?.animate([
+        { opacity: 0, transform: "translateY(14px) scale(.94)" },
+        { opacity: 1, transform: "none" },
+      ], { duration: 220, easing: "ease-out" });
+    }
+    if (turnKey && turnKey !== renderedTurn && round.turn === state.self && round.pausedAt == null) {
+      app.querySelector(".turn-banner")?.animate([
+        { opacity: .5, transform: "translateY(-5px)" }, { opacity: 1, transform: "none" },
+      ], { duration: 240, easing: "ease-out" });
+    }
+  }
+  renderedTable = tableKey;
+  renderedTurn = turnKey;
   if (focus) {
     const replacement = [...app.querySelectorAll(`[data-${focus}]`)].find(node => node.dataset[focus] === previous.dataset[focus]);
     replacement?.focus({ preventScroll: true });
   }
+  if (positions.size) window.scrollTo(scroll.x, scroll.y);
 }
 
 function accept(next) {
@@ -47,6 +85,7 @@ function showClock() {
   const label = `残り ${seconds} 秒`;
   if (clock.textContent !== label) clock.textContent = label;
   clock.classList.toggle("urgent", seconds <= 5);
+  clock.setAttribute("aria-label", label);
 }
 
 async function request(payload) {
@@ -183,6 +222,10 @@ app.addEventListener("click", event => {
     invite();
   } else if (action === "solo") {
     send({ type: "solo" });
+  } else if (action === "clear-selection") {
+    ui.selected.clear();
+    ui.error = "";
+    render();
   } else if (action === "play" || action === "resolve") {
     command(action, { cards: [...ui.selected] });
   } else if (action === "discard") {
@@ -192,6 +235,13 @@ app.addEventListener("click", event => {
   } else if (action) {
     command(action);
   }
+});
+
+document.addEventListener("keydown", event => {
+  if (event.key !== "Escape" || ui.busy || guide.open || !ui.selected.size) return;
+  ui.selected.clear();
+  ui.error = "";
+  render();
 });
 
 if (invitedCode && session?.code !== invitedCode) saveSession(null);
