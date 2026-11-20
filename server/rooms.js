@@ -59,7 +59,7 @@ export function updateClock(room, now = Date.now()) {
     }
     const player = room.players.find(candidate => candidate.id === round.turn);
     if (player.computer && now >= (round.computerAt ?? round.deadline)) {
-        applyMove(round, room.settings, player.id, player.name, computerMove(round));
+        applyMove(round, room.settings, player.id, player.name, computerMove(round, room.settings));
         resetClock(room, now);
         return true;
     }
