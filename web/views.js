@@ -216,14 +216,18 @@ export function matchView(state, ui) {
 
 export function resultView(state, ui) {
   const host = state.owner === state.self;
+  const tied = state.round.results.some(group => group.length > 1);
   let place = 1;
   return `${roomHeader(state, "対戦結果", "ラウンドが終了しました。", ui.busy, true)}
     ${message(ui.error, ui.notice)}
     <section class="panel results">
+      ${tied ? '<p class="muted compact">同順位のプレイヤーは表示順で次回の階級を決めます。</p>' : ""}
       ${state.round.results.map(group => {
         const rank = place;
         place += group.length;
-        return `<div class="result-row"><span>${placeName(rank, state.round.results.flat().length)} · ${rank}位${group.length > 1 ? "（同順位）" : ""}</span><strong>${group.map(player => escape(player.name) + (player.id === state.round.fallen ? ' <small class="fallen-label">都落ち</small>' : "")).join("、")}</strong></div>`;
+        return `<div class="result-row"><span>${placeName(rank, state.round.results.flat().length)} · ${rank}位${group.length > 1 ? "（同順位）" : ""}</span><strong>${group.map(player => escape(player.name)
+          + (tied && player.nextRank ? ` <small class="next-rank">次回：${escape(player.nextRank)}</small>` : "")
+          + (player.id === state.round.fallen ? ' <small class="fallen-label">都落ち</small>' : "")).join("、")}</strong></div>`;
       }).join("")}
       <div class="actions">${host
         ? button("start", "もう一度遊ぶ", "primary", ui.busy || state.players.length < 2) + button("lobby", "ロビーに戻る", "secondary", ui.busy)
@@ -236,7 +240,8 @@ export const guideView = `<h2>遊び方</h2>
   <p>手札をタップして選び、「出す」を押します。選んだ札を上へフリックしても出せます。横に収まらない手札は左右にスクロールできます。「選択解除」またはEscキーで選び直せます。</p>
   <p>毎ラウンド席順をシャッフルし、♦3を持つ人が最初の手番になります。</p>
   <p>同じメンバーで再戦すると前回の階級を引き継ぎます。大貧民は最も強い2枚を大富豪へ渡し、大富豪は配られた手札から2枚を選んで返します。4人以上では貧民と富豪も同様に1枚交換します。強さはジョーカー、2、A、K…3の順です。交換後に♦3を持つ人から始めます。</p>
-  <p>最初に上がった人の中に前回の大富豪がいなければ、前回の大富豪は都落ちで大貧民となり、以降は観戦します。同時に最初に上がった人の中に前回の大富豪が含まれる場合は都落ちしません。参加メンバーが変わった場合や前回の結果に同順位がある場合は、次の対戦で階級をリセットします。</p>
+  <p>最初に上がった人の中に前回の大富豪がいなければ、前回の大富豪は都落ちで大貧民となり、以降は観戦します。同時に最初に上がった人の中に前回の大富豪が含まれる場合は都落ちしません。前回の結果に同順位がある場合は、結果の表示順で次回の階級を決めます。参加メンバーが変わった場合は次の対戦で階級をリセットします。</p>
+  <p>カード交換は大富豪、富豪の順に行います。人間の交換は「交換する」で確定するまで待機します。</p>
   <p>同じ数字をまとめて出せます。場札があるときは、同じ枚数でより強い数字を出すかパスします。誰かが新しい札を出すと、前にパスした人にも手番が回ります。最後の出札のあと、ほかの人が全員パスすると場が流れます。</p>
   <p>通常は 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → J → Q → K → A → 2 の順に強くなります。ジョーカー単体は最強です。組に加えたジョーカーは同じ数字として数え、役も発動します。</p>
   <p>持ち時間は${turnSeconds}秒です。時間切れは自動でパスします。役の選択中なら自動で処理します。ホストが時間切れになると、席順で次の人にホスト権が移ります。</p>

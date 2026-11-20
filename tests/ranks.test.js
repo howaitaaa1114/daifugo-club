@@ -4,7 +4,7 @@ import { applyMove, startRound, timeoutMove } from "../game/round.js";
 import { computerMove } from "../game/computer.js";
 import { defaultSettings } from "../game/rules.js";
 import { strength } from "../game/cards.js";
-import { newPlayer, newRoom, roomView, runCommand } from "../server/rooms.js";
+import { newPlayer, newRoom, roomView, runCommand, updateClock } from "../server/rooms.js";
 import { matchView, resultView } from "../web/views.js";
 
 const players = ["a", "b", "c", "d"];
@@ -116,8 +116,8 @@ test("a tied first place without the previous king still forces last place", () 
     assert.deepEqual(round.results, [["b", "c"], ["d"], ["a"]]);
 });
 
-test("first round, changed roster, tied or invalid prior rankings start normally", () => {
-    for (const prior of [undefined, [["a", "b"], ["c"], ["d"]], [["a"], ["b"], ["c"], ["x"]],
+test("first round, changed roster or invalid prior rankings start normally", () => {
+    for (const prior of [undefined, [["a"], ["b"], ["c"], ["x"]],
         [["a"], ["b"], ["c"], ["c"]]]) {
         const round = startRound(players, 1, prior);
         assert.equal(round.pending, null);
@@ -167,6 +167,59 @@ test("room replay and lobby preserve rankings and hide exchange choices from oth
     replay.round.results = [...ids].reverse().map(id => [id]);
     runCommand(replay, owner, { type: "start" });
     assert.equal(replay.round.previousKing, ids[3]);
+});
+
+test("human rich player selects a return card after tied lower places and AI king exchange", () => {
+    const owner = newPlayer("あなた");
+    const room = newRoom("ABC234", owner);
+    room.solo = true;
+    room.players.push(...["King", "Poor", "Last"].map(name => ({ ...newPlayer(name), computer: true })));
+    const [human, king, poor, last] = room.players;
+    room.round = startRound(room.players.map(player => player.id), 1);
+    room.round.names = Object.fromEntries(room.players.map(player => [player.id, player.name]));
+    room.round.done = true;
+    room.round.results = [[king.id], [human.id], [poor.id, last.id]];
+    const results = roomView(room, human.id, 0);
+    assert.equal(results.round.results[1][0].nextRank, "富豪");
+    assert.match(resultView(results, ui), /次回：富豪/);
+
+    const now = 100000;
+    runCommand(room, human, { type: "start" }, now);
+    assert.equal(room.round.turn, king.id);
+    assert.equal(updateClock(room, now + 650), true);
+    assert.equal(room.round.turn, human.id);
+    assert.equal(room.round.pending.count, 1);
+    assert.equal(room.round.deadline, null);
+    const waiting = structuredClone(room.round);
+    assert.equal(updateClock(room, now + 300000), false);
+    assert.deepEqual(room.round, waiting);
+
+    runCommand(room, human, { type: "pause" }, now + 300001);
+    runCommand(room, human, { type: "resume" }, now + 300501);
+    assert.equal(room.round.deadline, null);
+    const returning = room.round.pending.choices.at(-1);
+    const tribute = room.round.pending.tribute[0];
+    const view = roomView(room, human.id, 1);
+    assert.ok(view.round.pending.choices.some(card => card.id === returning.id));
+    assert.match(matchView(view, { ...ui, selected: new Set([returning.id]) }), /data-action="resolve">交換する/);
+    runCommand(room, human, { type: "resolve", cards: [returning.id] }, now + 300502);
+    assert.equal(room.round.pending, null);
+    assert.ok(room.round.hands[poor.id].some(card => card.id === returning.id));
+    assert.ok(room.round.hands[human.id].some(card => card.id === tribute.id));
+    assert.ok(!room.round.hands[human.id].some(card => card.id === returning.id));
+    assert.equal(room.round.deadline, now + 300502 + 30000);
+});
+
+test("legacy human exchange with an expired deadline still waits for manual selection", () => {
+    const owner = newPlayer("Human");
+    const room = newRoom("ABC234", owner);
+    room.players.push(newPlayer("B"), newPlayer("C"), newPlayer("D"));
+    room.round = startRound(room.players.map(player => player.id), 1, room.players.map(player => [player.id]));
+    room.round.deadline = 1;
+    const original = structuredClone(room.round);
+    assert.equal(updateClock(room, 100000), false);
+    assert.deepEqual(room.round, original);
+    assert.equal(roomView(room, owner.id, 0).round.deadline, null);
 });
 
 test("fallen status is public during play and rendered in final results", () => {

@@ -306,6 +306,7 @@ button { touch-action: manipulation; }
 .table-arena .table-player .fallen-title { color: #ffd4d6; background: #49292d; }
 .exchange-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 12px; font-size: .85rem; color: var(--muted); }
 .exchange-card { background: #fff5de; color: #1c2631; border-radius: 5px; padding: 5px 9px; font-weight: 800; }
+.next-rank { display: inline-block; color: var(--muted); font-size: .75rem; font-weight: 500; }
 .exchange-card.red { color: #aa3c4b; }
 .fallen-label { color: #ffd4d6; font-size: .8rem; }
 @media (hover: hover) {

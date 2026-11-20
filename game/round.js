@@ -29,7 +29,7 @@ export function startRound(players, jokerCount, previousResults = []) {
     };
     const ranking = previousResults.flat();
     const validRanking = ranking.length === players.length && new Set(ranking).size === players.length
-        && ranking.every(id => players.includes(id)) && previousResults.every(group => group.length === 1);
+        && ranking.every(id => players.includes(id));
     if (validRanking) {
         round.previousKing = ranking[0];
         round.previousRanks = Object.fromEntries(ranking.map((id, index) => [id, placeName(index + 1, players.length)]));

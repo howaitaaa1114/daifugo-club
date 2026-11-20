@@ -1,4 +1,4 @@
-import { defaultSettings, maxPlayers, roles, turnSeconds } from "../game/rules.js";
+import { defaultSettings, maxPlayers, placeName, roles, turnSeconds } from "../game/rules.js";
 import { applyMove, following, startRound, timeoutMove } from "../game/round.js";
 import { requireRule, strength } from "../game/cards.js";
 import { computerMove } from "../game/computer.js";
@@ -45,19 +45,22 @@ export function findPlayer(room, token) {
 }
 function resetClock(room, now) {
     const round = room.round;
-    round.deadline = round.done ? null : now + turnSeconds * 1000;
-    round.computerAt = !round.done && room.players.some(player => player.id === round.turn && player.computer)
+    const computer = room.players.some(player => player.id === round.turn && player.computer);
+    const choosingExchange = round.pending?.kind === "exchange" && !computer;
+    round.deadline = round.done || choosingExchange ? null : now + turnSeconds * 1000;
+    round.computerAt = !round.done && computer
         ? now + 650 : null;
 }
 
 export function updateClock(room, now = Date.now()) {
     const round = room.round;
     if (!round || round.done || round.pausedAt != null) return false;
+    const player = room.players.find(candidate => candidate.id === round.turn);
+    if (round.pending?.kind === "exchange" && !player.computer) return false;
     if (!round.deadline) {
         resetClock(room, now);
         return true;
     }
-    const player = room.players.find(candidate => candidate.id === round.turn);
     if (player.computer && now >= (round.computerAt ?? round.deadline)) {
         applyMove(round, room.settings, player.id, player.name, computerMove(round, room.settings));
         resetClock(room, now);
@@ -117,7 +120,7 @@ export function runCommand(room, player, command, now = Date.now()) {
             break;
         case "resume":
             requireRule(room.round?.pausedAt != null, "対戦は一時停止されていません。");
-            room.round.deadline += now - room.round.pausedAt;
+            if (room.round.deadline != null) room.round.deadline += now - room.round.pausedAt;
             if (room.round.computerAt != null) room.round.computerAt += now - room.round.pausedAt;
             room.round.pausedAt = null;
             break;
@@ -174,7 +177,8 @@ export function roomView(room, self, revision) {
             })),
         round: round && {
             turn: round.turn,
-            deadline: round.deadline,
+            deadline: round.pending?.kind === "exchange" && !playersById.get(round.turn)?.computer
+                ? null : round.deadline,
             pausedAt: round.pausedAt ?? null,
             table: round.table,
             discardCount: round.discard.length,
@@ -195,7 +199,8 @@ export function roomView(room, self, revision) {
             done: round.done,
             results: round.results.map((group)=>group.map((id)=>({
                         id,
-                        name: round.names[id]
+                        name: round.names[id],
+                        nextRank: placeName(round.results.flat().indexOf(id) + 1, round.order.length)
                     }))),
             last: round.last
         }

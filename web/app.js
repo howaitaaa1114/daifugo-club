@@ -120,6 +120,12 @@ function showClock() {
   const clock = app.querySelector("[data-clock]");
   if (!clock) return;
   const { deadline, pausedAt } = state.round;
+  if (state.round.pending?.kind === "exchange" && deadline == null) {
+    clock.textContent = state.round.turn === state.self ? "札を選んで交換" : "交換の完了待ち";
+    clock.classList.remove("urgent");
+    clock.setAttribute("aria-label", clock.textContent);
+    return;
+  }
   const seconds = Math.max(0, Math.ceil((deadline - (pausedAt ?? Date.now() + clockOffset)) / 1000));
   const label = `残り ${seconds} 秒`;
   if (clock.textContent !== label) clock.textContent = label;
