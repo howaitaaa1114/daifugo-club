@@ -33,8 +33,8 @@ h2 { font-size: 1.12rem; letter-spacing: .03em; }
 .landing { display: grid; grid-template-columns: minmax(300px, .9fr) 1.1fr; gap: clamp(28px, 6vw, 100px); align-items: center; padding-top: clamp(50px, 8vh, 100px); }
 .landing h1 { font-weight: 900; font-size: clamp(52px, 8.5vw, 122px); line-height: 1.03; letter-spacing: -.085em; white-space: nowrap; }
 .landing h1 span { display: block; color: var(--gold); }
-.landing .landing-title { line-height: 0; white-space: normal; }
-.landing-title img { display: block; width: min(100%, 310px); height: auto; border-radius: 16px; }
+.landing .landing-title { display: grid; place-items: center; width: min(100%, 300px); padding: 12px; line-height: 0; white-space: normal; border: 1px solid #d5b86c99; border-radius: 48% 48% 42% 42%; background: radial-gradient(ellipse at 50% 40%, #fff9db 0%, #ead69d 68%, #b99959 100%); box-shadow: 0 12px 35px #0006, 0 0 0 4px #b99b5726, inset 0 0 25px #8c632955; }
+.landing-title img { display: block; width: 100%; height: auto; mix-blend-mode: multiply; }
 .eyebrow { display: flex; gap: 10px; align-items: center; color: var(--green); font-size: .82rem; font-weight: 700; letter-spacing: .11em; margin-bottom: 17px; }
 .eyebrow > span { width: 8px; height: 8px; background: var(--green); border-radius: 50%; box-shadow: 0 0 12px #b3dfc05e; }
 .eyebrow b { color: var(--gold); }
