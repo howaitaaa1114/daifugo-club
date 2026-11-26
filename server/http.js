@@ -4,6 +4,7 @@ import { roomStore } from "./store.js";
 export const assets = {
   "/": ["web/index.html", "text/html"],
   "/og-image.png": ["web/og-image.png", "image/png"],
+  "/logo.png": ["web/logo.png", "image/png"],
   "/style.css": ["web/style.css", "text/css"],
   "/web/app.js": ["web/app.js", "text/javascript"],
   "/web/views.js": ["web/views.js", "text/javascript"],

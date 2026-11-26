@@ -30,7 +30,7 @@ export function homeView({ mode, name, code, busy, error }) {
   return `<section class="landing">
     <div class="landing-copy">
       <p class="eyebrow"><span></span> オンライン対戦 <b>·</b> 2〜${maxPlayers}人</p>
-      <h1>大富豪<span>クラブ</span></h1>
+      <h1 class="landing-title"><img src="/logo.png" alt="大富豪クラブ" width="1254" height="1254"></h1>
       <p class="intro">友だちとオンライン対戦。<br>ひとりならAI3人とすぐ遊べます。</p>
       ${button("solo", "ひとりで遊ぶ · AI3人と対戦", "primary solo-start", busy)}
       <section class="entry">
