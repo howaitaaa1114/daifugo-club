@@ -211,7 +211,9 @@ async function sync() {
 }
 
 async function invite() {
-  const url = new URL(location.pathname, location.origin);
+  const url = location.hostname === "daifugo-club-online.t2y7jhnn2n.chatgpt.site"
+    ? new URL("https://howaitaaa1114.github.io/daifugo-club/")
+    : new URL(location.pathname, location.origin);
   url.searchParams.set("room", state.code);
   try {
     await navigator.clipboard.writeText(url.href);
